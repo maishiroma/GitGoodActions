@@ -1,0 +1,154 @@
+# nix-garage GitHub Actions Workflow for publishing images to Docker Hub
+name: Publish_Image
+
+### Workflow
+# 1. We want this to be ran manually i.e. with a comment in a PR. To do this, we can have a release process where we update what is currently out in prod via a PR
+# 2. Once the PR is made, we then have someone (who is an approver) comment in the PR "Publish Images" (WIP)
+# 3. GitHub Actions will detect this comment being made, and check if the comment was made by an approved person, alongside what they commented.
+# 4. If it matches, we fire off this job, where we log into docker.io with nwiauto (also pass in the password via a secret declared in the repo)
+# 5. Once we logged in, we then execute the script "publish-imgs", which will publish the image passed into it.
+
+on:
+  # This job will be fired off when a comment has been made in an issue (which also impliitly includes PRs)
+  issue_comment:
+    types: [created]
+
+jobs:
+  build:
+    name: Publish Image to Dockerhub
+    
+    # Running on a GitHub hosted runner
+    runs-on: ubuntu-18.04
+
+    # Checks if the comment contains the word 'publish'
+    # As well as if the comment was made in a PR
+    if: > 
+      startsWith(github.event.comment.body, "publish")
+      && startsWith(github.event.issue.pull_request.url, 'https://')
+
+    steps:
+      # Checks out this repository to the runner
+      - uses: actions/checkout@v2
+
+      # Installs pre-reqs the runner does not initially have
+      # TODO: This can be cached in the future
+      - name: Install Pre-Reqs
+        id: prereq
+        run: |
+          set -eu
+          which nix
+          if [ $? -eq 1 ]; then
+            curl -o install-nix-2.3.6 https://releases.nixos.org/nix/nix-2.3.6/install
+            curl -o install-nix-2.3.6.asc https://releases.nixos.org/nix/nix-2.3.6/install.asc
+            gpg2 --recv-keys B541D55301270E0BCF15CA5D8170B4726D7198DE
+            gpg2 --verify ./install-nix-2.3.6.asc
+            sh ./install-nix-2.3.6
+          fi
+
+          which skopeo
+          if [ $? -eq 1 ]; then
+            . /etc/os-release
+            sh -c "echo 'deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/x${NAME}_${VERSION_ID}/ /' > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list"
+            wget -nv https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable/x${NAME}_${VERSION_ID}/Release.key -O- | sudo apt-key add -
+            apt-get update -qq
+            apt-get install skopeo
+          fi
+
+      # Verifies if the commenter is an approver, otherwise, the job will output an error
+      - name: Verify that Commenter is Approver
+        id: verify
+        run: |
+          resp=$(curl -sSf \
+          --url https://api.github.com/orgs/Nebulaworks/teams/engineering/membership/${{ github.event.comment.actor.login }} \
+          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header 'content-type: application/json'
+          | jq -r '.state')
+
+          if [ $resp == "active" ]; then
+            echo ::set-output name=status::success
+          else
+            echo ::set-output name=status::failure
+          fi
+        continue-on-error: true
+
+      # If the commenter is an approver, attempts to login to docker.io as nwiauto
+      - name: Login To Docker Hub as nwiauto
+        id: login
+        env:
+          USER: mshiroma
+          PASSWORD: ${{ secrets.user_pasword }}
+        if: steps.verify.outputs.status == 'success'
+        run: |
+          echo "$PASSWORD" | skopeo login docker.io login --username $USER --password-stdin
+
+          if [ $? -eq 0 ]; then
+            echo ::set-output name=status::success
+          else
+            echo ::set-output name=status::failure
+          fi
+        continue-on-error: true
+      
+      # If logging in as nwiauto suceeds, attempts to publish all images declared in `imgs/`
+      - name: Run Publish Script
+        id: publish
+        if: steps.login.outputs.status == 'success'
+        working-directory: $GITHUB_WORKSPACE
+        run: |
+          set -eu
+          for i in $(ls -d ./imgs/*/); do 
+            currImg=${echo ${i%%/} | cut -f 3 -d '/'}
+            
+            cd ./imgs/$curImg
+            nix-build '<nixpkgs>' -A dockerTools
+
+            cd $GITHUB_WORKSPACE 
+            ./publish-imgs $currImg
+          done
+        continue-on-error: false
+      
+      # Outputs an issue comment if verifying as an approver failed
+      - name: Verify Failure Issue Comment
+        id: failure_verify_comment
+        if: steps.verify.outputs.status == 'failure'
+        run: |
+          curl --request POST \
+          --url https://api.github.com/repos/maishiroma/GitGoodActons/issues/${{ github.event.issue.number }}
+          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header 'content-type: application/json' \
+          --data '{
+            "body": "The user ${{ github.event.comment.actor.login }} is not authorized to publish images from this repository.\nComment with \`@nebulaworks/approvers\` to notify our approver's team to approve publishing these images."
+            }'
+          exit 1
+        continue-on-error: false
+      
+      # Outputs an issue comment if logging into docker.io failed
+      - name: Login Failure Issue Comment
+        id: failure_login_comment
+        if: steps.login.outputs.status == 'failure'
+        run: |
+          curl --request POST \
+          --url https://api.github.com/repos/maishiroma/GitGoodActons/issues/${{ github.event.issue.number }}
+          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header 'content-type: application/json' \
+          --data '{
+            "body": "Login into docker.io failed, please try again."
+            }'
+          exit 1
+        continue-on-error: false
+      
+      # If all steps above completed sucessfully, this will output a success issue comment
+      - name: Success Issue Comment
+        id: success_comment
+        working-directory: $GITHUB_WORKSPACE
+        run: |
+          imgs=$(ls -d ./imgs/*/ | cut -f 3 -d '/')
+
+          curl --request POST \
+          --url https://api.github.com/repos/maishiroma/GitGoodActons/issues/${{ github.event.issue.number }}
+          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header 'content-type: application/json' \
+          --data '{
+            "body": "The following images:\n $imgs \n have been published on \`hub.docker.com\`."
+            }'
+          exit 0
+        continue-on-error: false
