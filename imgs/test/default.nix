@@ -1,9 +1,9 @@
-{ nixpkgs, buildImage , system ? builtins.currentSystem }:
+{ pkgs ? import <nixpkgs> {}, system ? builtins.currentSystem }:
+# Minimum Bash image for Docker
 
-rec {
-  bash = buildImage {
-    name = "bash";
-    tag = "latest";
-    contents = nixpkgs.bashInteractive;
-  };
+with pkgs;
+dockerTools.buildImage {
+  name = "bash";
+  tag = "latest";
+  contents = [ bashInteractive ];
 }

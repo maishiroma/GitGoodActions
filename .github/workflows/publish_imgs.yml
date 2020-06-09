@@ -99,7 +99,7 @@ jobs:
             currImg=${echo ${i%%/} | cut -f 3 -d '/'}
             
             cd ./imgs/$curImg
-            nix-build '<nixpkgs>' -A dockerTools
+            nix-build
 
             cd $GITHUB_WORKSPACE 
             ./publish-imgs $currImg
