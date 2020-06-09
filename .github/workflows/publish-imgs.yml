@@ -1,5 +1,4 @@
 # nix-garage GitHub Actions Workflow for publishing images to Docker Hub
-name: Publish Image
 
 ### Workflow
 # 1. We want this to be ran manually i.e. with a comment in a PR. To do this, we can have a release process where we update what is currently out in prod via a PR
@@ -7,6 +6,8 @@ name: Publish Image
 # 3. GitHub Actions will detect this comment being made, and check if the comment was made by an approved person, alongside what they commented.
 # 4. If it matches, we fire off this job, where we log into docker.io with nwiauto (also pass in the password via a secret declared in the repo)
 # 5. Once we logged in, we then execute the script "publish-imgs", which will publish the image passed into it.
+
+name: Publish Image
 
 on:
   # This job will be fired off when a comment has been made in an issue (which also impliitly includes PRs)
@@ -73,7 +74,7 @@ jobs:
           USER: mshiroma
         if: steps.verify.outputs.status == 'success'
         run: |
-          skopeo login docker.io --username "$USER" --password ${{ secrets.USER_PASSWORD }}
+          echo "${{ secrets.USER_PASSWORD }}" | docker login docker.io --username "$USER" --password-stdin
 
           if [ $? -eq 0 ]; then
             echo ::set-output name=status::success
@@ -86,60 +87,70 @@ jobs:
       - name: Run Publish Script
         id: publish
         if: steps.login.outputs.status == 'success'
-        working-directory: $GITHUB_WORKSPACE
         run: |
           set -x
-          ls -l
           . /home/runner/.nix-profile/etc/profile.d/nix.sh
-          for i in $(ls -d ./imgs/*/); do 
-            currImg=${echo ${i%%/} | cut -f 3 -d '/'}
-            
-            cd ./imgs/$curImg
+          allImgs=""
+          for currImgPath in $(ls -d $GITHUB_WORKSPACE/imgs/*/); do 
+            currImgName=$(basename $currImgPath)
+            if [ $allImgs -z ]; then
+              allImgs="$currImgName"
+            else
+              allImgs="$allImgs, $currImgName"
+            fi
+
+            cd $currImgPath
             nix-build
+            sudo cp ./result $GITHUB_WORKSPACE/result
 
             cd $GITHUB_WORKSPACE 
-            ./publish-imgs $currImg
+            ./publish-imgs $currImgName
+
+            rm -f $GITHUB_WORKSPACE/result
           done
+
+          echo ::set-output name=allImgs::$allImgs
         continue-on-error: false
       
       # Outputs an issue comment if verifying as an approver failed
       - name: Verify Failure Issue Comment
         id: failure_verify_comment
         if: steps.verify.outputs.status == 'failure'
-        run: |
-          curl -sSf --request POST \
-          --url https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/${{ github.event.issue.number }} \
-          --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
-          --header 'Content-Type: application/json' \
-          --data '{"body": "The user ${{ github.event.comment.user.login }} is not authorized to publish images from this repository.\nComment with a mention to nebulaworks/approvers to notify the approvers to publishing new images."}'
-          exit 0
+        uses: jungwinter/comment@5acbb   # SHA ref v1.0.2
+        with:
+          type: create
+          body: |
+            The user ${{ github.event.comment.user.login }} is not authorized to publish images from this repository.
+            
+            Comment with a mention to `nebulaworks/approvers` to notify the approvers to publishing new images.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
         continue-on-error: false
       
       # Outputs an issue comment if logging into docker.io failed
       - name: Login Failure Issue Comment
         id: failure_login_comment
         if: steps.login.outputs.status == 'failure'
-        run: |
-          curl -sSf --request POST \
-          --url https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/${{ github.event.issue.number }} \
-          --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
-          --header 'Content-Type: application/json' \
-          --data '{"body": "Login into docker.io failed, please try again."}'
-          exit 0
+        uses: jungwinter/comment@5acbb    # SHA ref v1.0.2
+        with:
+          type: create
+          body: |
+            Login credentials for mshiroma at `docker.io` failed, please try again.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
         continue-on-error: false
       
-      # If all steps above completed sucessfully, this will output a success issue comment
+      # # If all steps above completed sucessfully, this will output a success issue comment
       - name: Success Issue Comment
         id: success_comment
-        if: steps.verify.outputs.status == 'true' && steps.login.outputs.status == 'true'
-        working-directory: $GITHUB_WORKSPACE
-        run: |
-          imgs=$(ls -d ./imgs/*/ | cut -f 3 -d '/')
-
-          curl -sSf --request POST \
-          --url https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/${{ github.event.issue.number }} \
-          --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
-          --header 'Content-Type: application/json' \
-          --data '{"body": "The following images:\n $imgs \n have been published on \`hub.docker.com\`."}'
-          exit 0
+        if: steps.login.outputs.status == 'success' && steps.verify.outputs.status == 'success'
+        uses: jungwinter/comment@5acbb  # SHA ref v1.0.2
+        with:
+          type: create
+          body: |
+            The following docker images: 
+            ${{ steps.publish.outputs.allImgs }}
+            have been published on [Docker Hub](https://hub.docker.com/u/mshiroma) under user, `mshiroma`.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
         continue-on-error: false
