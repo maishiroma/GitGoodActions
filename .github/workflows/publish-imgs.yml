@@ -37,9 +37,9 @@ jobs:
         id: verify
         run: |
           set -x
-          approvers_teams_id=$(curl -sSf \
+          approvers_team_id=$(curl -sSf \
           --url https://api.github.com/orgs/Nebulaworks/teams \
-          --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header 'Authorization: Bearer ${{ secrets.MAISHIROMA_PAT }}' \
           --header 'Content-Type: application/json' | jq -r '.[] | select(.name == "engineering") | .id' \
           )
           
