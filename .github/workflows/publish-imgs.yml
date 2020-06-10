@@ -37,15 +37,9 @@ jobs:
         id: verify
         run: |
           set -x
-          approvers_team_id=$(curl -sSf \
-          --url https://api.github.com/orgs/Nebulaworks/teams \
-          --header 'Authorization: Bearer ${{ secrets.MAISHIROMA_PAT }}' \
-          --header 'Content-Type: application/json' | jq -r '.[] | select(.name == "engineering") | .id' \
-          )
-          
           is_approver=$(curl -sSf \
-          --url https://api.github.com/teams/$approvers_team_id/memberships/${{ github.event.comment.user.login }} \
-          --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --url https://api.github.com/orgs/Nebulaworks/teams/engineering/memberships/${{ github.event.comment.user.login }} \
+          --header 'Authorization: Bearer ${{ secrets.MAISHIROMA_PAT }}' \
           --header 'Content-Type: application/json' | jq -r '.state' \
           )
 
@@ -62,12 +56,11 @@ jobs:
         if: steps.verify.outputs.status == 'success'
         run: |
           set -x
-          encrypted_password=$(echo -n $${{ secrets.USER_PASSWORD }} | base64)
           cat << EOF > $GITHUB_WORKSPACE/auth.json
           {
             "auths": {
               "https://index.docker.io/v1/": {
-                "auth": "$encrypted_password"
+                "auth": "$(echo -n 'mshiroma:${{ secrets.USER_PASSWORD }}' | base64)"
               }
             }
           }
@@ -83,19 +76,13 @@ jobs:
               allImgs="$allImgs, $currImgName"
             fi
 
-            cat << EOF > ./temp.sh
-            #!/bin/sh
-            nix-shell --run "export REGISTRY_AUTH_FILE=$(pwd)/auth.json; \
-            cd $currImgPath && nix-build; \
-            sudo cp ./result $GITHUB_WORKSPACE/result; \
-            cd $GITHUB_WORKSPACE && ./publish-imgs $currImgName;" \
-            EOF
-            sudo chmod 744 ./temp.sh
-
             docker run --rm -v $(git rev-parse --show-toplevel):/repo -w /repo \
             nixos/nix@sha256:af330838e838cedea2355e7ca267280fc9dd68615888f4e20972ec51beb101d8 \
-            /bin/sh -c "./temp.sh"
-                        
+            /bin/sh -c "nix-shell --run 'export REGISTRY_AUTH_FILE=/repo/auth.json; \
+            cd /repo/imgs/$currImgName && nix-build; \
+            cp result /repo/result; \
+            cd /repo && ./publish-imgs $currImgName;' \
+            "
           done
           echo ::set-output name=allImgs::$allImgs
         continue-on-error: false
