@@ -31,65 +31,49 @@ jobs:
       # Checks out this repository to the runner
       - uses: actions/checkout@v2
 
-      # Installs pre-reqs the runner does not initially have
-      # TODO: This can be cached in the future
-      - name: Install Pre-Reqs
-        id: prereq
-        run: |
-          set -x
-          curl -o install-nix-2.3.6 https://releases.nixos.org/nix/nix-2.3.6/install
-          curl -o install-nix-2.3.6.asc https://releases.nixos.org/nix/nix-2.3.6/install.asc
-          gpg2 --recv-keys B541D55301270E0BCF15CA5D8170B4726D7198DE
-          gpg2 --verify ./install-nix-2.3.6.asc
-          sh ./install-nix-2.3.6
-
-          . /etc/os-release
-          sudo sh -c "echo 'deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/x${NAME}_${VERSION_ID}/ /' > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list"     
-          wget -nv https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable/x${NAME}_${VERSION_ID}/Release.key -O- | sudo apt-key add -
-          sudo apt-get update -qq
-          sudo apt-get install skopeo
-        continue-on-error: false
-
       # Verifies if the commenter is an approver, otherwise, the job will output an error
+      # For testing sake, I'm using engineers
       - name: Verify that Commenter is Approver
         id: verify
         run: |
-          resp=$(curl -sSf \
-          --url https://api.github.com/orgs/Nebulaworks/teams/engineering/memberships/${{ github.event.comment.user.login }} \
-          --header 'Authorization: Bearer ${{ secrets.MAISHIROMA_PAT }}' \
+          set -x
+          approvers_teams_id=$(curl -sSf \
+          --url https://api.github.com/orgs/Nebulaworks/teams \
+          --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header 'Content-Type: application/json' | jq -r '.[] | select(.name == "engineering") | .id' \
+          )
+          
+          is_approver=$(curl -sSf \
+          --url https://api.github.com/teams/$approvers_team_id/memberships/${{ github.event.comment.user.login }} \
+          --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
           --header 'Content-Type: application/json' | jq -r '.state' \
           )
 
-          if [ $resp == "active" ]; then
-            echo ::set-output name=status::success
-          else
-            echo ::set-output name=status::failure
-          fi
-        continue-on-error: true
-
-      # If the commenter is an approver, attempts to login to docker.io as nwiauto
-      - name: Login To Docker Hub as mshiroma
-        id: login
-        env:
-          USER: mshiroma
-        if: steps.verify.outputs.status == 'success'
-        run: |
-          echo "${{ secrets.USER_PASSWORD }}" | docker login docker.io --username "$USER" --password-stdin
-
-          if [ $? -eq 0 ]; then
+          if [ $is_approver == "active" ]; then
             echo ::set-output name=status::success
           else
             echo ::set-output name=status::failure
           fi
         continue-on-error: true
       
-      # If logging in as nwiauto suceeds, attempts to publish all images declared in `imgs/`
-      - name: Run Publish Script
+      # If the user verification went through, we attempt to authenticatie to Docker hub and publish all images
+      - name: Prepare Runner and Execute Publish Script
         id: publish
-        if: steps.login.outputs.status == 'success'
+        if: steps.verify.outputs.status == 'success'
         run: |
           set -x
-          . /home/runner/.nix-profile/etc/profile.d/nix.sh
+          encrypted_password=$(echo -n $${{ secrets.USER_PASSWORD }} | base64)
+          cat << EOF > $GITHUB_WORKSPACE/auth.json
+          {
+            "auths": {
+              "https://index.docker.io/v1/": {
+                "auth": "$encrypted_password"
+              }
+            }
+          }
+          EOF
+
+          cd $GITHUB_WORKSPACE
           allImgs=""
           for currImgPath in $(ls -d $GITHUB_WORKSPACE/imgs/*/); do 
             currImgName=$(basename $currImgPath)
@@ -99,16 +83,20 @@ jobs:
               allImgs="$allImgs, $currImgName"
             fi
 
-            cd $currImgPath
-            nix-build
-            sudo cp ./result $GITHUB_WORKSPACE/result
+            cat << EOF > ./temp.sh
+            #!/bin/sh
+            nix-shell --run "export REGISTRY_AUTH_FILE=$(pwd)/auth.json; \
+            cd $currImgPath && nix-build; \
+            sudo cp ./result $GITHUB_WORKSPACE/result; \
+            cd $GITHUB_WORKSPACE && ./publish-imgs $currImgName;" \
+            EOF
+            sudo chmod 744 ./temp.sh
 
-            cd $GITHUB_WORKSPACE 
-            ./publish-imgs $currImgName
-
-            rm -f $GITHUB_WORKSPACE/result
+            docker run --rm -v $(git rev-parse --show-toplevel):/repo -w /repo \
+            nixos/nix@sha256:af330838e838cedea2355e7ca267280fc9dd68615888f4e20972ec51beb101d8 \
+            /bin/sh -c "./temp.sh"
+                        
           done
-
           echo ::set-output name=allImgs::$allImgs
         continue-on-error: false
       
@@ -127,23 +115,10 @@ jobs:
           issue_number: ${{ github.event.issue.number }}
         continue-on-error: false
       
-      # Outputs an issue comment if logging into docker.io failed
-      - name: Login Failure Issue Comment
-        id: failure_login_comment
-        if: steps.login.outputs.status == 'failure'
-        uses: jungwinter/comment@5acbb    # SHA ref v1.0.2
-        with:
-          type: create
-          body: |
-            Login credentials for mshiroma at `docker.io` failed, please try again.
-          token: ${{ secrets.GITHUB_TOKEN }}
-          issue_number: ${{ github.event.issue.number }}
-        continue-on-error: false
-      
       # # If all steps above completed sucessfully, this will output a success issue comment
       - name: Success Issue Comment
         id: success_comment
-        if: steps.login.outputs.status == 'success' && steps.verify.outputs.status == 'success'
+        if: steps.verify.outputs.status == 'success'
         uses: jungwinter/comment@5acbb  # SHA ref v1.0.2
         with:
           type: create
