@@ -69,6 +69,9 @@ jobs:
 
           cd $GITHUB_WORKSPACE
           allImgs=""
+          docker container run -dt --name nix_builder -v $(git rev-parse --show-toplevel):/repo -w /repo \
+          nixos/nix@sha256:af330838e838cedea2355e7ca267280fc9dd68615888f4e20972ec51beb101d8 /bin/sh
+          
           for currImgPath in $(ls -d $GITHUB_WORKSPACE/imgs/*/); do 
             currImgName=$(basename $currImgPath)
             if [ $allImgs -z ]; then
@@ -77,9 +80,7 @@ jobs:
               allImgs="$allImgs, $currImgName"
             fi
 
-            docker run --rm -v $(git rev-parse --show-toplevel):/repo -w /repo \
-            nixos/nix@sha256:af330838e838cedea2355e7ca267280fc9dd68615888f4e20972ec51beb101d8 \
-            /bin/sh -c "nix-shell --run 'export REGISTRY_AUTH_FILE=/repo/auth.json; \
+            docker container exec nix_builder /bin/sh -c "nix-shell --run 'export REGISTRY_AUTH_FILE=/repo/auth.json; \
             cd /repo/imgs/$currImgName && nix-build; \
             cp result /repo/result; \
             cd /repo && ./publish-imgs $currImgName;' \
