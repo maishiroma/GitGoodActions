@@ -6,8 +6,9 @@
 # 3. GitHub Actions will detect this comment being made, and check if the comment was made by an approved person, alongside what they commented.
 # 4. If it matches, we fire off this job, where we log into docker.io with nwiauto (also pass in the password via a secret declared in the repo)
 # 5. Once we logged in, we then execute the script "publish-imgs", which will publish the image passed into it.
+# 6. If successful, the job will create a new PR comment saying all of the images that were published as well as a link to the page with all of the images
 
-name: Publish Image
+name: Publish Docker Images
 
 on:
   # This job will be fired off when a comment has been made in an issue (which also impliitly includes PRs)
@@ -16,7 +17,7 @@ on:
 
 jobs:
   build:
-    name: Publish Image to Dockerhub
+    name: Publish Docker Images to Docker Hub
     
     # Running on a GitHub hosted runner
     runs-on: ubuntu-18.04
@@ -95,14 +96,14 @@ jobs:
         with:
           type: create
           body: |
-            The user ${{ github.event.comment.user.login }} is not authorized to publish images from this repository.
+            User `${{ github.event.comment.user.login }}` is not authorized to publish images from this repository.
             
-            Comment with a mention to `nebulaworks/approvers` to notify the approvers to publishing new images.
+            Comment with a mention to `nebulaworks/approvers` to notify the approvers to publishing the new Docker images.
           token: ${{ secrets.GITHUB_TOKEN }}
           issue_number: ${{ github.event.issue.number }}
         continue-on-error: false
       
-      # # If all steps above completed sucessfully, this will output a success issue comment
+      # If all steps above completed sucessfully, this will output a success issue comment
       - name: Success Issue Comment
         id: success_comment
         if: steps.verify.outputs.status == 'success'
