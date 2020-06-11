@@ -16,22 +16,18 @@ on:
     types: [created]
 
 jobs:
-  build:
-    name: Publish Docker Images to Docker Hub
-    
-    # Running on a GitHub hosted runner
+  verify:
+    name: Verify Commenter    
     runs-on: ubuntu-18.04
 
-    # Checks if the comment contains the word 'publish'
-    # As well as if the comment was made in a PR
+    # Checks if the comment contains the word 'publish as well as if the comment was made in a PR
     if: > 
       startsWith(github.event.comment.body, 'publish')
       && startsWith(github.event.issue.pull_request.url, 'https://')
-
+    outputs:
+      status: ${{ steps.verify.outputs.status }}
+    
     steps:
-      # Checks out this repository to the runner
-      - uses: actions/checkout@v2
-
       # Verifies if the commenter is an approver, otherwise, the job will output an error
       # For testing sake, I'm using engineers
       - name: Verify that Commenter is Approver
@@ -50,11 +46,29 @@ jobs:
             echo ::set-output name=status::failure
           fi
         continue-on-error: true
-      
-      # If the user verification went through, we attempt to authenticatie to Docker hub and publish all images
-      - name: Prepare Runner and Execute Publish Script
+
+  publish:
+    name: Prepare and Publish Images
+    runs-on: ubuntu-18.04
+    needs: verify
+
+    # Only runs if the status from the verify stage passed
+    if: needs.verify.outputs.status == 'success'
+    outputs:
+      allImgs: ${{ steps.publish.outputs.allImgs }}
+
+    # Utilizing nixos/nix docker image v2.3
+    container:
+      image: nixos/nix@sha256:af330838e838cedea2355e7ca267280fc9dd68615888f4e20972ec51beb101d8
+    
+    steps:
+      # Checks out repository to docker container
+      - name: Pulls Repository Code
+        uses: actions/checkout@v2
+
+      # Attempt to authenticatie to Docker hub and publish all images
+      - name: Authenticate and Execute Publish Script
         id: publish
-        if: steps.verify.outputs.status == 'success'
         run: |
           set -x
           cat << EOF > $GITHUB_WORKSPACE/auth.json
@@ -66,33 +80,35 @@ jobs:
             }
           }
           EOF
+          export REGISTRY_AUTH_FILE=$GITHUB_WORKSPACE/auth.json
 
           cd $GITHUB_WORKSPACE
-          allImgs=""
-          docker container run -dt --name nix_builder -v $(git rev-parse --show-toplevel):/repo -w /repo \
-          nixos/nix@sha256:af330838e838cedea2355e7ca267280fc9dd68615888f4e20972ec51beb101d8 /bin/sh
-          
+          allImgs=""          
           for currImgPath in $(ls -d $GITHUB_WORKSPACE/imgs/*/); do 
             currImgName=$(basename $currImgPath)
-            if [ $allImgs -z ]; then
+            if [ -z $allImgs ]; then
               allImgs="$currImgName"
             else
               allImgs="$allImgs, $currImgName"
             fi
 
-            docker container exec nix_builder /bin/sh -c "nix-shell --run 'export REGISTRY_AUTH_FILE=/repo/auth.json; \
-            cd /repo/imgs/$currImgName && nix-build; \
-            cp result /repo/result; \
-            cd /repo && ./publish-imgs $currImgName;' \
-            "
+            nix-shell --run "cd ./imgs/$currImgName && nix-build"
+            cp $GITHUB_WORKSPACE/imgs/$currImgName/result $GITHUB_WORKSPACE/result
+            nix-shell --run "./publish-imgs $currImgName"
           done
           echo ::set-output name=allImgs::$allImgs
         continue-on-error: false
-      
-      # Outputs an issue comment if verifying as an approver failed
-      - name: Verify Failure Issue Comment
-        id: failure_verify_comment
-        if: steps.verify.outputs.status == 'failure'
+
+  post:
+    name: Generate PR Comments
+    runs-on: ubuntu-18.04
+    needs: [verify, publish]
+
+    steps:
+
+      # Creates a PR comment telling commenter to ask an approved user to pubish images
+      - name: Create Failure PR Comment for Verifying
+        if: needs.verify.outputs.status == 'failure'
         uses: jungwinter/comment@5acbb   # SHA ref v1.0.2
         with:
           type: create
@@ -103,17 +119,16 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           issue_number: ${{ github.event.issue.number }}
         continue-on-error: false
-      
-      # If all steps above completed sucessfully, this will output a success issue comment
-      - name: Success Issue Comment
-        id: success_comment
-        if: steps.verify.outputs.status == 'success'
+
+      # Creates a PR comment showing commenter images that were built as well as a link to the page where they currently exist
+      - name: Create Success PR Comment
+        if: needs.verify.outputs.status == 'success' && needs.publish.result == 'success'
         uses: jungwinter/comment@5acbb  # SHA ref v1.0.2
         with:
           type: create
           body: |
             The following docker images: 
-            ${{ steps.publish.outputs.allImgs }}
+            ${{ needs.publish.outputs.allImgs }}
             have been published on [Docker Hub](https://hub.docker.com/u/mshiroma) under user, `mshiroma`.
           token: ${{ secrets.GITHUB_TOKEN }}
           issue_number: ${{ github.event.issue.number }}
