@@ -1,3 +1,3 @@
-{foo,no}:
-    something = 10 / 1212;
-    what = 1;
+{ foo, no }:
+something = 10 / 1212;
+what = 1;
