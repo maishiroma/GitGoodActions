@@ -1,3 +1,3 @@
-{foo, bar}:
-    value = 1 + 2;
-    another = 3 + 4;
+{ foo, bar }:
+value = 1 + 2;
+another = 3 + 4;
