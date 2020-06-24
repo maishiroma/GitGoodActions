@@ -6,11 +6,7 @@
 # 4. If the job suceeds, the PR is allowed to be merged. If not, the PR is unable to be merged
 
 name: Lint Nix Configs
-on: 
-  # This job only runs when there's a PR that has changes to any file that has the `.nix` file extension
-  pull_request: 
-    paths:
-      - '**.nix'
+on: pull_request
 
 jobs:
   linter:
@@ -25,26 +21,16 @@ jobs:
       - name: Pulls Repository
         uses: actions/checkout@v2
       
-        # Utilizing an external GitHub Action to obtain all changed files
-        # https://github.com/jitterbit/get-changed-files
-      - name: Get All Changed Files
-        id: filediff
-        uses: jitterbit/get-changed-files@b17fbb #SHA for v1
-        with:
-          format: space-delimited
-      
-        # Parses through all of the changed files using nixpkgs-fmt, outputting the diff
+        # Parses through all nix files using nixpkgs-fmt, outputting the diff
         # between the modded one and original if one of the new nix configs are not properly formatted
-        
-        # NOTE:
-        # When using `diff` in GitHub Actions, it causes script to forcibly exit, so workaround is to
+        # NOTE: When using `diff` in GitHub Actions, it causes script to forcibly exit, so workaround is to
         # unset e so that the script will "ignore" whatever return value is leaking in the diff command
       - name: Verify Nix Configs
         id: format
         run: |
           cd $GITHUB_WORKSPACE
           has_failed="false"
-          for changed_file_path in ${{ steps.filediff.outputs.all }}; do
+          for changed_file_path in ./* ./**/*; do
             full_filename=$(basename $changed_file_path)
             file_extension="${full_filename##*.}"
             fmt_file_path="${changed_file_path%.*}_fmt.nix"
