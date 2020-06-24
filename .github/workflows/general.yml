@@ -44,6 +44,8 @@ jobs:
               if [ ! -z "$differences" ]; then
                 printf "\n$differences\n"
                 has_failed="true"
+              else
+                printf "\n$changed_file_path is formatted!\n" 
               fi
             fi            
           done
