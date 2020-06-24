@@ -30,27 +30,23 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE
           has_failed="false"
-          for changed_file_path in ./* ./**/*; do
-            full_filename=$(basename $changed_file_path)
-            file_extension="${full_filename##*.}"
-            fmt_file_path="${changed_file_path%.*}_fmt.nix"
-            if [[ "$file_extension" == "nix" ]] && [[ -f "$changed_file_path" ]]; then
-              nix-shell --run "cat $changed_file_path | nixpkgs-fmt > $fmt_file_path" 
+          for file_path in $(find . -name "*.nix"); do
+            fmt_file_path="${file_path%.*}_fmt.nix"
+            nix-shell --run "cat $file_path | nixpkgs-fmt > $fmt_file_path" 
 
-              set +e
-              differences=$(diff $changed_file_path $fmt_file_path)
-              set -e
+            set +e
+            differences=$(diff $file_path $fmt_file_path)
+            set -e
 
-              if [ ! -z "$differences" ]; then
-                printf "\n$differences\n"
-                has_failed="true"
-              else
-                printf "\n$changed_file_path is formatted!\n" 
-              fi
-            fi            
+            if [ ! -z "$differences" ]; then
+              printf "\n$differences\n"
+              has_failed="true"
+            else
+              printf "$file_path passed formatting check.\n" 
+            fi
           done
           if [ "$has_failed" == "true" ]; then
-            echo "::error ::Nix configs not formatted beforehand with nixpkgs-fmt."
+            echo "::error ::Some nix configs were not properly formatted beforehand with nixpkgs-fmt."
             exit 1
           fi
         continue-on-error: false
