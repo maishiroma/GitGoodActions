@@ -5,5 +5,5 @@ with pkgs;
 dockerTools.buildImage {
   name = "mshiroma/bash";
   tag = "latest";
-  contents = [ bashInteractive git ];
+  contents = [ bashInteractive git jq ];
 }
