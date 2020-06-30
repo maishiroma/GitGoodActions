@@ -24,24 +24,34 @@ jobs:
     if: > 
       startsWith(github.event.comment.body, 'publish')
       && startsWith(github.event.issue.pull_request.url, 'https://')
+
+    # Upon completion, this step will output a success status and the commit SHA of the PR's head commit.
     outputs:
       status: ${{ steps.verify.outputs.status }}
+      sha: ${{ steps.verify.outputs.sha }}
     
     steps:
-      # Verifies if the commenter is an approver, otherwise, the job will output an error
-      # For testing sake, I'm using engineers
-      - name: Verify that Commenter is Approver
+      # Verifies if commenter is approver, in which it will extract PR's head commit sha
+      - name: Verify Commenter is Approver
         id: verify
         run: |
           set -x
           is_approver=$(curl -sSf \
-          --url https://api.github.com/orgs/Nebulaworks/teams/engineering/memberships/${{ github.event.comment.user.login }} \
+          --url https://api.github.com/orgs/Nebulaworks/teams/approvers/memberships/${{ github.event.comment.user.login }} \
           --header 'Authorization: Bearer ${{ secrets.MAISHIROMA_PAT }}' \
           --header 'Content-Type: application/json' | jq -r '.state' \
           )
+          commit_sha=$(curl -sSf \
+          --url ${{ github.event.issue.pull_request.url }} \
+          --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header 'Content-Type: application/json' | jq -r '.head.sha' \
+          )
 
-          if [ $is_approver == "active" ]; then
+          if [[ $is_approver == "active" ]] && [[ ! -z $commit_sha ]]; then
             echo ::set-output name=status::success
+            echo ::set-output name=sha::$commit_sha
+          elif [ -z $commit_sha ]; then
+            echo ::set-output name=status::invalidsha
           else
             echo ::set-output name=status::failure
           fi
@@ -51,7 +61,7 @@ jobs:
     name: Prepare and Publish Images
     runs-on: ubuntu-18.04
     needs: verify
-
+    
     # Only runs if the status from the verify stage passed
     if: needs.verify.outputs.status == 'success'
     outputs:
@@ -63,8 +73,12 @@ jobs:
     
     steps:
       # Checks out repository to docker container
+      # Utilizes the commit from the open PR, which was gotten from the previous step
+      # Using SHA v2
       - name: Pulls Repository Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@28c7f3d2
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
 
       # Attempt to authenticatie to Docker hub and publish all images
       - name: Authenticate and Execute Publish Script
@@ -93,8 +107,8 @@ jobs:
             fi
 
             nix-shell --run "cd ./imgs/$currImgName && nix-build"
-            cp $GITHUB_WORKSPACE/imgs/$currImgName/result $GITHUB_WORKSPACE/result
-            nix-shell --run "./publish-imgs $currImgName"
+            cp $currImgPath/result $GITHUB_WORKSPACE/result
+            nix-shell --run "cd $GITHUB_WORKSPACE && ./publish-imgs $currImgName"            
           done
           echo ::set-output name=allImgs::$allImgs
         continue-on-error: false
@@ -105,7 +119,19 @@ jobs:
     needs: [verify, publish]
 
     steps:
-
+      # Creates PR comment telling commentor that there was an issue with the commit SHA for the PR 
+      - name: Create Faulure PR Comment for Invalid Commit SHA
+        if: needs.verify.outputs.status == 'invalidsha'
+        uses: jungwinter/comment@5acbb   # SHA ref v1.0.2
+        with:
+          type: create
+          body: |
+            Hm, there was an issue with the commit SHA used to obtain the repository. 
+            Please verify the commit SHA used: `${{ needs.verify.outputs.sha }}`
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
+        continue-on-error: false
+      
       # Creates a PR comment telling commenter to ask an approved user to pubish images
       - name: Create Failure PR Comment for Verifying
         if: needs.verify.outputs.status == 'failure'
