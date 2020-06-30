@@ -5,5 +5,5 @@ with pkgs;
 dockerTools.buildImage {
   name = "mshiroma/bash2";
   tag = "latest";
-  contents = [ bashInteractive ];
+  contents = [ bashInteractive coreutils ];
 }
