@@ -5,5 +5,5 @@ with pkgs;
 dockerTools.buildImage {
   name = "mshiroma/bash";
   tag = "latest";
-  contents = [ bashInteractive ];
+  contents = [ bashInteractive vim ];
 }
