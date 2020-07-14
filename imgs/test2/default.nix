@@ -3,7 +3,7 @@
 
 with pkgs;
 dockerTools.buildImage {
-  name = "mshiroma/bash2";
+  name = "mshiroma/test2";
   tag = "latest";
   contents = [ bashInteractive ];
 }

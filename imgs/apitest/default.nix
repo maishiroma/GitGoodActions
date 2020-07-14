@@ -3,7 +3,7 @@
 
 with pkgs;
 dockerTools.buildImage {
-  name = "mshiroma/test";
+  name = "mshiroma/apitest";
   tag = "latest";
-  contents = [ bashInteractive ];
+  contents = [ bashInteractive curl ];
 }
