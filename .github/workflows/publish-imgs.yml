@@ -79,12 +79,18 @@ jobs:
         uses: actions/checkout@28c7f3d2
         with:
           ref: ${{ needs.verify.outputs.sha }}
-
+      
       # Attempt to authenticatie to Docker hub and publish all images
       - name: Authenticate and Execute Publish Script
         id: publish
         run: |
           set -x
+          cat << EOF > $GITHUB_WORKSPACE/data.json
+          {
+            "username": "mshiroma",
+            "password": "${{ secrets.USER_PASSWORD }}"
+          }
+          EOF
           cat << EOF > $GITHUB_WORKSPACE/auth.json
           {
             "auths": {
@@ -94,6 +100,11 @@ jobs:
             }
           }
           EOF
+
+          set +x
+          export DOCKER_HUB_TOKEN=$(nix-shell --run "curl -s -H 'Content-Type: application/json' -X POST \
+          -d @$GITHUB_WORKSPACE/data.json --url https://hub.docker.com/v2/users/login/ | jq -r .token")
+          set -x
           export REGISTRY_AUTH_FILE=$GITHUB_WORKSPACE/auth.json
 
           cd $GITHUB_WORKSPACE
@@ -108,7 +119,12 @@ jobs:
 
             nix-shell --run "cd ./imgs/$currImgName && nix-build"
             cp $currImgPath/result $GITHUB_WORKSPACE/result
-            nix-shell --run "cd $GITHUB_WORKSPACE && ./publish-imgs $currImgName"
+            
+            set +x
+            nix-shell --run "cd $GITHUB_WORKSPACE && \
+            ./create_repo $DOCKER_HUB_TOKEN mshiroma $currImgName && \
+            ./publish-imgs $currImgName"
+            set -x
           done
           echo ::set-output name=allImgs::$allImgs
         continue-on-error: false
