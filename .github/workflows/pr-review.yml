@@ -1,0 +1,22 @@
+# This Workflow uses this workflow: https://github.com/marketplace/actions/pull-request-title-rules
+name: Verify PRs
+on: 
+  pull_request:
+    types: [opened, edited, synchronize, reopened]  # This is needed for this workflow to work
+
+jobs:
+
+  verify:
+    name: Verify PR name
+    runs-on: ubuntu-18.04
+
+    steps:
+    - uses: deepakputhraya/action-pr-title@master
+      with:
+        regex: '^\[(WIP|READY|REVIEW|WAIT)\]\ -\ \[[A-Z]+-\d+\]\ -\ .+' # Regex the title should match.
+        # allowed_prefixes: 'feature,fix,JIRA' # title should start with the given prefix
+        # disallowed_prefixes: 'feat/,hotfix' # title should not start with the given prefix
+        # prefix_case_sensitive: false # title prefix are case insensitive
+        min_length: 8 # Min length of the title
+        max_length: 30 # Max length of the title
+        # github_token: ${{ github.token }} # Default: ${{ github.token }}
