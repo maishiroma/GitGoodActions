@@ -14,4 +14,11 @@ jobs:
     steps:
     - name: script
       run: |
+        echo "Hello"
+
+        for index in {1..2}
+        do 
+          echo "loopin"
+        done
+        
         conftest --help
