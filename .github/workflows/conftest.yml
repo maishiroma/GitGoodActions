@@ -1,0 +1,17 @@
+# Conftest
+
+name: Conftest
+on: pull_request
+
+jobs:
+  try:
+    name: Attempt to run in Docker
+    runs-on: ubuntu-latest
+
+    container:
+      image: openpolicyagent/conftest:v0.22.0
+    
+    steps:
+    - name: script
+      runs: |
+        --version
