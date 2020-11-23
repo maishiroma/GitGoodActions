@@ -14,4 +14,4 @@ jobs:
     steps:
     - name: script
       run: |
-        conftest --version
+        conftest --help
