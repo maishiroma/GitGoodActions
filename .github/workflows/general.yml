@@ -6,7 +6,10 @@
 # 4. If the job suceeds, the PR is allowed to be merged. If not, the PR is unable to be merged
 
 name: Lint Nix Configs
-on: pull_request
+on:
+  pull_request:
+    paths:
+      - '**.nix'
 
 jobs:
   linter:
