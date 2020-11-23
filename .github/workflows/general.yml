@@ -33,7 +33,7 @@ jobs:
       - name: Verify Nix Configs
         id: format
         run: |
-          cd $GITHUB_WORKSPACE
+          cd $GITHUB_WORKSPACE/nix
           has_failed="false"
           for file_path in $(find . -name "*.nix"); do
             fmt_file_path="${file_path%.*}_fmt.nix"
