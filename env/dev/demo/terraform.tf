@@ -1,9 +1,9 @@
 resource "aws_key+pair" {
-    name = "something"
-type = "asdas"
+  name = "something"
+  type = "asdas"
 }
 
 variable "somevar" {
-    type = "string"
-    default = "asdasd"
+  type    = "string"
+  default = "asdasd"
 }
