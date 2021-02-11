@@ -1,0 +1,24 @@
+name: git-merge
+
+on: [pull_request]
+
+jobs:
+  checkBadMerge:
+    name: git-no-merge-commit
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+      with:
+        ref: ${{ env.BRANCH }}
+    - name: Perform Check
+      run: |
+
+        check_for_merge_commits=$(git log origin/master..${{ env.BRANCH }} --merges)
+
+        if [ -z $check_for_merge_commits ]; then
+          echo "::error ::A git merge was performed on this branch, please use git rebase instead."
+          echo "::error ::For more information refer to X."
+          exit 1
+        fi
