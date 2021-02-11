@@ -15,7 +15,7 @@ jobs:
         fetch-depth: '0'  # Need this since by default, the checkout does not pull in any other branches
     - name: Perform Check
       run: |
-        check_for_merge_commits=$(git log origin/master..origin/$GITHUB_HEAD_REF --merges | cat)
+        check_for_merge_commits=$(git --no-pager log origin/master..origin/$GITHUB_HEAD_REF --merges)
         echo $GITHUB_HEAD_REF
         echo $check_for_merge_commits
 
