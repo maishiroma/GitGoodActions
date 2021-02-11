@@ -12,12 +12,12 @@ jobs:
       uses: actions/checkout@v2
       with:
         ref: ${{ env.BRANCH }}
+        fetch-depth: '0'  # Need this since by default, the checkout does not pull in any other branches
     - name: Perform Check
       run: |
+        check_for_merge_commits=$(git log origin/master..HEAD --merges)
 
-        check_for_merge_commits=$(git log origin/master..${{ env.BRANCH }} --merges)
-
-        if [ -z $check_for_merge_commits ]; then
+        if [ -n "$check_for_merge_commits" ]; then
           echo "::error ::A git merge was performed on this branch, please use git rebase instead."
           echo "::error ::For more information refer to X."
           exit 1
