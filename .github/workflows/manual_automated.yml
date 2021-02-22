@@ -19,12 +19,19 @@ jobs:
   test_manual:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' }}
+
+    outputs:
+      job_output: ${{ steps.echo.outputs.job_output }}
+
     steps:
       - name: Echo Hello World
+        id: echo
         run: |
           echo "Tag Value ${{ github.event.inputs.tag }}"
 
           echo "You are identified as ${{ github.event.inputs.another_tag }}"
+
+          echo "::set-output name=job_output::${{ github.event.inputs.another_tag }}"
   
   test_schedule:
     runs-on: ubuntu-latest
