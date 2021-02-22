@@ -20,19 +20,34 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' }}
 
-    outputs:
-      job_output: ${{ steps.echo.outputs.job_output }}
-
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
       - name: Echo Hello World
-        id: echo
         run: |
           echo "Tag Value ${{ github.event.inputs.tag }}"
 
           echo "You are identified as ${{ github.event.inputs.another_tag }}"
 
-          echo "::set-output name=job_output::${{ github.event.inputs.another_tag }}"
-  
+          echo "${{ github.event.inputs.another_tag }}" > $GITHUB_WORKSPACE/temp.txt
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@e448a9b857ee2131e752b06002bf0e093c65e571 # v2
+        with:
+          name: prev-output
+          path: ${{ github.workspace }}/temp.txt
+
+      # - name: Download Artifact
+      #   uses: actions/download-artifact@4a7a711286f30c025902c28b541c10e147a9b843 # v2
+      #   with:
+      #     name: prev-output
+      #     path: ${{ github.workspace }}/newArtifact
+        
+      # - name: Test if I can read output
+      #   run: |
+      #     cat ${{ github.workspace }}/newArtifact/temp.txt
+
   test_schedule:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'schedule' }}
