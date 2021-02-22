@@ -12,8 +12,8 @@ on:
         description: "Something funny"
         required: false
         default: "Smitty Werben Jager Man Jensen"
-  schedule: # Creating a chron job along with the manual workflow (runs every 5 mins)
-    - cron: "*/5 * * * *"
+  #schedule: # Creating a chron job along with the manual workflow (runs every 5 mins)
+  #  - cron: "*/5 * * * *"
 
 jobs:
   test_manual:
