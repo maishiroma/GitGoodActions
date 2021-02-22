@@ -1,6 +1,6 @@
 # This workflow is to showcase how to use a manual workflow to trigger a job
 
-name: Manual Test
+name: Manual and Schedule Task
 on:
   workflow_dispatch: # This is required when creating a workflow that leverages GitHub actions
     inputs:
@@ -18,14 +18,18 @@ on:
 jobs:
   test_manual:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Echo Hello World
-        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           echo "Tag Value ${{ github.event.inputs.tag }}"
 
           echo "You are identified as ${{ github.event.inputs.another_tag }}"
+  
+  test_schedule:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' }}
+    steps:
       - name: Automated Task
-        if: ${{ github.event_name == 'schedule' }}
         run: |
           echo "This is an automated step! Hello there!"
