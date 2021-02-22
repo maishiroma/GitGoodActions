@@ -1,0 +1,24 @@
+# This workflow is to showcase how to use a manual workflow to trigger a job
+
+name: Manual Test
+on:
+  workflow_dispatch: # This is required when creating a workflow that leverages GitHub actions
+    inputs:
+      tag:
+        description: "The value of the tag to use"
+        required: true
+        default: "Test value"
+      another_tag:
+        description: "Something funny"
+        required: false
+        default: "Smitty Werben Jager Man Jensen"
+
+jobs:
+  test_manual:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo Hello World
+        run: |
+          echo "Tag Value ${{ github.event.inputs.tag }}"
+
+          echo "You are identified as ${{ github.event.inputs.another_tag }}"
