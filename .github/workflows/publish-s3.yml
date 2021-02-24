@@ -1,0 +1,193 @@
+# This is a GitHub Action workflow template that publishes a repo's codebase into an S3 bucket.
+#
+# PRE-REQS
+# AWS Credentials (Obtained through Org level secret sharing on GitHub)
+#
+# Base Template Functionality
+#   This template can be freely modified, but out of the box, this workflow performs the following jobs:
+#     1. Upon a manual invocation, can zip up all of the code in the repository and send it to a central S3 bucket
+#     2. In a PR, can comment the word `publish` to zip up the contents of the repo upwards
+#    
+#   In all invocations, this template will check for duplicate tags and will error if there already exists a tag named, `env` on an existing object version.
+
+name: Zip Publish Artifact to S3
+on: 
+  workflow_dispatch:  # GitHub Lingo for Manual Action
+    inputs:
+      destination_s3:
+        description: "The S3 bucket to push the resulting zip."
+        required: true
+        default: "bucket"
+      region:
+        description: "The aws region used to place the resulting zip."
+        required: true
+  issue_comment:  # PRs are considered issues in GitHub issues
+    types: [created]
+
+jobs:
+  manual_invoker:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code from ${{ github.ref }}
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.ref }}
+      - name: Publish repository zip to S3
+        env:
+          DES_S3: ${{ github.event.inputs.destination_S3 }}
+          REGION: ${{ github.event.inputs.region }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          cd $GITHUB_WORKSPACE
+          
+          name_of_artifact="$(basename ${GITHUB_REPOSITORY}).zip"
+          name_of_artifact="${name_of_artifact,,}"
+          key_prefix="shared-services/${REGION}/static-site/${name_of_artifact}"
+
+          assume_role_creds=$(aws sts assume-role --role-arn arn:aws:iam::142220970059:role/sandbox_dev --role-session-name temp --duration-seconds 900 2>/dev/null)
+          AWS_ACCESS_KEY_ID=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"AccessKeyId\"]")
+          AWS_SECRET_ACCESS_KEY=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"SecretAccessKey\"]")
+          AWS_SESSION_TOKEN=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"SessionToken\"]")
+
+          export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+          export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+          export AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+
+          version_list=($(aws s3api list-object-versions --bucket "${DES_S3}" --prefix "${key_prefix}" --query "Versions[*].VersionId" --output text))
+
+          for curr_version in "${version_list[@]}" 
+          do
+              if [ "$curr_version" != "None" ]; then
+                env_tag_value=$(aws s3api get-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" --query "TagSet[?Key=='env'].Value" --output text)
+
+                if [ "$env_tag_value" == "dev" ]; then
+                    aws s3api delete-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" > /dev/null
+                    echo "Removed dev tag from version ID: ${curr_version}"
+                    break
+                fi
+              fi 
+              
+          done
+
+          zip -qr ${name_of_artifact} *
+
+          new_obj_ver=$(aws s3api put-object --bucket "${DES_S3}" --key "${key_prefix}"  --body "${name_of_artifact}" --server-side-encryption "AES256" --tagging "env=dev" --query "VersionId" --output text)
+          
+          echo "Sucessfully placed zip in S3! New version Id: ${new_obj_ver}"
+
+  pr_comment_invoker:
+    if: >
+      startsWith(github.event.comment.body, 'publish')
+      && startsWith(github.event.issue.pull_request.url, 'https://')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Chat Comment
+        id: chatverify
+        run: |
+          numb_lines=$(echo "${{ github.event.comment.body }}" | wc -l)
+          numb_words=$(echo "${{ github.event.comment.body }}" | wc -w)
+
+          if [[ ${numb_lines} -gt 1 || ${numb_words} -gt 3 ]]; then
+            echo "::error ::Chat command too long, please format comment like this:"
+            echo "::error ::publish [bucket-endpoint] [region]"
+            echo "::set-output name=isverified::false"
+          elif [[ ${numb_lines} -eq 1 && ${numb_words} -lt 3 ]]; then
+            echo "::error ::Chat command too short, please format comment like this:"
+            echo "::error ::publish [bucket-endpoint] [region]"
+            echo "::set-output name=isverified::false"
+          else
+            echo "::set-output name=isverified::true"
+          fi
+        continue-on-error: true
+      - name: Parse Chat Commands
+        if: steps.chatverify.outputs.isverified == 'true'
+        id: chatcommands
+        run: |
+          des_s3=$(echo "${{ github.event.comment.body }}" | cut -d ' ' -f 2)
+          region=$(echo "${{ github.event.comment.body }}" | cut -d ' ' -f 3)
+
+          echo "::set-output name=destination_s3::${des_s3}"
+          echo "::set-output name=region::${region}"
+      - name: Check out code from ${{ env.BRANCH }}
+        if: steps.chatverify.outputs.isverified == 'true'
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ env.BRANCH }}
+      - name: Publish repository zip to S3
+        id: publish
+        if: steps.chatverify.outputs.isverified == 'true'
+        env:
+          DES_S3: ${{ steps.chatcommands.outputs.destination_s3 }}
+          REGION: ${{ steps.chatcommands.outputs.region }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          cd $GITHUB_WORKSPACE
+          
+          name_of_artifact="$(basename ${GITHUB_REPOSITORY}).zip"
+          name_of_artifact="${name_of_artifact,,}"
+          key_prefix="shared-services/${REGION}/static-site/${name_of_artifact}"
+
+          assume_role_creds=$(aws sts assume-role --role-arn arn:aws:iam::142220970059:role/sandbox_dev --role-session-name temp --duration-seconds 900 2>/dev/null)
+          AWS_ACCESS_KEY_ID=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"AccessKeyId\"]")
+          AWS_SECRET_ACCESS_KEY=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"SecretAccessKey\"]")
+          AWS_SESSION_TOKEN=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"SessionToken\"]")
+
+          export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+          export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+          export AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+
+          version_list=($(aws s3api list-object-versions --bucket "${DES_S3}" --prefix "${key_prefix}" --query "Versions[*].VersionId" --output text))
+
+          for curr_version in "${version_list[@]}" 
+          do
+            if [ "$curr_version" != "None" ]; then
+              env_tag_value=$(aws s3api get-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" --query "TagSet[?Key=='env'].Value" --output text)
+
+              if [ "$env_tag_value" == "dev" ]; then
+                aws s3api delete-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" > /dev/null
+                echo "Removed dev tag from version ID: ${curr_version}"
+                break
+              fi
+             fi
+          done
+
+          zip -qr ${name_of_artifact} *
+
+          new_obj_ver=$(aws s3api put-object --bucket "${DES_S3}" --key "${key_prefix}"  --body "${name_of_artifact}" --server-side-encryption "AES256" --tagging "env=dev" --query "VersionId" --output text)
+
+          echo "Sucessfully placed zip in S3! New version Id: ${new_obj_ver}"
+          
+          echo "::set-output name=ispublished::true"
+          echo "::set-output name=artifactname::${name_of_artifact}"
+          echo "::set-output name=versionid::${new_obj_ver}"
+        continue-on-error: true
+      - name: Print Success Comment
+        if: >
+          steps.chatverify.outputs.isverified == 'true'
+          && steps.publish.outputs.ispublished == 'true'
+        uses: jungwinter/comment@5acbb5699b76c111821fb2540534cb339e2b32ed  # SHA ref v1.0.2
+        with:
+          type: create
+          body: |
+            Successfully published repository ZIP to: 
+            `s3://${{ steps.chatcommands.outputs.destination_s3 }}/shared-services/${{ steps.chatcommands.outputs.region }}/static-site/${{ steps.publish.outputs.artifactname }}`
+
+            Object version id: `${{ steps.publish.outputs.versionid }}`
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
+      - name: Print Failure Comment
+        if: >
+          steps.chatverify.outputs.isverified == 'false'
+          || steps.publish.outputs.ispublished == ''
+        uses: jungwinter/comment@5acbb5699b76c111821fb2540534cb339e2b32ed  # SHA ref v1.0.2
+        with:
+          type: create
+          body: |
+            Whoops! The artifact build has failed! Please refer to the Actions logs for this run for more information.
+
+            Workflow run [link](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
