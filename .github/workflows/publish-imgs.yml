@@ -22,7 +22,7 @@ jobs:
 
     # Checks if the comment contains the word 'publish as well as if the comment was made in a PR
     if: > 
-      startsWith(github.event.comment.body, 'publish')
+      startsWith(github.event.comment.body, 'push')
       && startsWith(github.event.issue.pull_request.url, 'https://')
       
     # Upon completion, this step will output a success status and the commit SHA of the PR's head commit.
