@@ -1,0 +1,124 @@
+# This is a GitHub Action workflow aims to provide a template CI job to promote repository zips to the next environment.
+# This workflow comes in tangent with the zip-publish-artifact-s3 yaml
+#
+# PRE-REQS
+#   AWS Credentials (Obtained through Org level secret sharing on GitHub)
+#   Replace the top level env vars with the correct values
+#
+#
+# Base Template Functionality
+#   1. On pushes to a tag, this CI will zip up the repository and send the zip up to S3, tagging it with a `tst` env tag
+#       (Note that the bucket used will be the default value that is set in the zip-publish-artifact-s3)
+#   2. On manual invocations, this CI will take the object version that is marked as `tst` and change it to `prd`.
+#       (On first time runs, this will make tst and prd point to the same resources)
+
+name: Promote S3 Zip
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Do you want to promote the last tst artifact to prd (type yes)?
+        required: true
+
+env:
+  DES_S3: "sandbox-nwi"
+  REGION: "us-west-2"
+
+jobs:
+  tst_promotion:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }}
+    steps:
+      - name: Checkout code from ${{ github.ref }}
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.ref }}
+      - name: Create and push tst zip
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+           cd $GITHUB_WORKSPACE
+          
+            name_of_artifact="$(basename ${GITHUB_REPOSITORY}).zip"
+            name_of_artifact="${name_of_artifact,,}"
+            key_prefix="shared-services/${REGION}/static-site/${name_of_artifact}"
+
+            assume_role_creds=$(aws sts assume-role --role-arn arn:aws:iam::142220970059:role/sandbox_dev --role-session-name temp --duration-seconds 900 2>/dev/null)
+            AWS_ACCESS_KEY_ID=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"AccessKeyId\"]")
+            AWS_SECRET_ACCESS_KEY=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"SecretAccessKey\"]")
+            AWS_SESSION_TOKEN=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"SessionToken\"]")
+
+            export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            export AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+
+            version_list=($(aws s3api list-object-versions --bucket "${DES_S3}" --prefix "${key_prefix}" --query "Versions[*].VersionId" --output text))
+
+            for curr_version in "${version_list[@]}" 
+            do
+                if [ "$curr_version" != "None" ]; then
+                  env_tag_value=$(aws s3api get-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" --query "TagSet[?Key=='env'].Value" --output text)
+
+                  if [ "$env_tag_value" == "tst" ]; then
+                      aws s3api delete-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" > /dev/null
+                      echo "Removed tst tag from version ID: ${curr_version}"
+                      break
+                  fi
+                fi 
+                
+            done
+
+            zip -qr ${name_of_artifact} *
+
+            new_obj_ver=$(aws s3api put-object --bucket "${DES_S3}" --key "${key_prefix}"  --body "${name_of_artifact}" --server-side-encryption "AES256" --tagging "env=tst" --query "VersionId" --output text)
+            
+            echo "Sucessfully placed zip in S3! New version Id: ${new_obj_ver}"
+
+  prd_promotion:
+    runs-on: ubuntu-latest
+    if: > 
+      ${{ github.event_name == 'workflow_dispatch' }}
+      && ${{ github.event.inputs.confirm }} == "yes"
+    steps:
+      - name: Promote tst zip to prd zip in S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          cd $GITHUB_WORKSPACE
+          
+          name_of_artifact="$(basename ${GITHUB_REPOSITORY}).zip"
+          name_of_artifact="${name_of_artifact,,}"
+          key_prefix="shared-services/${REGION}/static-site/${name_of_artifact}"
+
+          assume_role_creds=$(aws sts assume-role --role-arn arn:aws:iam::142220970059:role/sandbox_dev --role-session-name temp --duration-seconds 900 2>/dev/null)
+          AWS_ACCESS_KEY_ID=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"AccessKeyId\"]")
+          AWS_SECRET_ACCESS_KEY=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"SecretAccessKey\"]")
+          AWS_SESSION_TOKEN=$(echo ${assume_role_creds} | jq --raw-output ".Credentials[\"SessionToken\"]")
+
+          export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+          export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+          export AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+
+          version_list=($(aws s3api list-object-versions --bucket "${DES_S3}" --prefix "${key_prefix}" --query "Versions[*].VersionId" --output text))
+
+          for curr_version in "${version_list[@]}" 
+          do
+              if [ "$curr_version" != "None" ]; then
+                env_tag_value=$(aws s3api get-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" --query "TagSet[?Key=='env'].Value" --output text)
+
+                if [ "$env_tag_value" == "tst" ]; then
+                    aws s3api delete-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" > /dev/null                    
+                    aws s3api put-object-tagging --bucket "${DES_S3}" --key "${key_prefix}" --version-id "${curr_version}" --tagging "env=prd" > /dev/null
+                    echo "Sucessfully promoted ${curr_version} from tst to prd!"
+                    exit 0
+                fi
+              fi 
+          done
+
+          echo "::error ::Unable to find a zip with tag tst. Try pushing up a new tag up!"
+          exit 1
