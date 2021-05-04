@@ -24,6 +24,11 @@ resource aws_ebs_volume test {
   encrypted = false
 }
 
+resource aws_ebs_volume test_2 {
+  name      = "another"
+  encrypted = false
+}
+
 provider aws {
   version = "= 2.68.0"
   region  = "us-west-2"
