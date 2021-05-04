@@ -1,5 +1,10 @@
 name: tfsec
 on:
+  pull_request:
+      paths:
+        - '**.tf'
+      branches:
+        - master
   push:
     branches:
       - master
