@@ -1,0 +1,46 @@
+# Lambda Tests GitHub Actions Workflow
+# This will only run if there are concurrent changes in said folder.
+
+name: AWS Lambda Unit Tests
+
+on:
+  pull_request: # Runs this when new changes are added to the awslamda directory in a PR
+    paths: 'awslambda/**'
+    branches:
+      - master
+
+jobs:
+  pythontests:
+    runs-on: ubuntu-latest
+    strategy: # Lists the number of python versions to use for tests
+      matrix:
+        python-version: [3.7, 3.8]
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ env.GITHUB_HEAD_REF }}
+          fetch-depth: 0
+      - name: Install Python v${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install unit testing pre-reqs
+        run: |
+          python -m pip install --upgrade pip
+          pip install tox tox-gh-actions
+      - name: Perform unit testing
+        run: |
+          cd $GITHUB_WORKSPACE
+          numb_commits=$(git rev-list --count master..$GITHUB_HEAD_REF)
+          IFS=$'\n' dir_list=( $(git --no-pager diff --dirstat=files,0 HEAD~${numb_commits} | sed -E 's/^[ 0-9.]+% //g') )
+          
+          for curr_dir in "${dir_list[@]}"
+          do
+            files_in_dir=$(find ${curr_dir} -maxdepth 1 -name "tox.ini" | wc -l)
+            if [ ${files_in_dir} -ge 1 ]; then
+              cd $GITHUB_WORKSPACE/${curr_dir}
+              tox
+            fi
+          done
