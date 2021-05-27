@@ -20,8 +20,9 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v2
         with:
-          ref: ${{ env.GITHUB_HEAD_REF }}
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fetch master branch
+        run: git fetch origin master
       - name: Install Python v${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
@@ -29,18 +30,23 @@ jobs:
       - name: Install unit testing pre-reqs
         run: |
           python -m pip install --upgrade pip
-          pip install tox tox-gh-actions
+          pip install tox
       - name: Perform unit testing
+        env:
+          LATEST_COMMIT: ${{ github.event.pull_request.head.sha }}
+          CURR_PYTHON_VER: ${{ matrix.python-version }}
         run: |
           cd $GITHUB_WORKSPACE
-          numb_commits=$(git rev-list --count master..$GITHUB_HEAD_REF)
-          IFS=$'\n' dir_list=( $(git --no-pager diff --dirstat=files,0 HEAD~${numb_commits} | sed -E 's/^[ 0-9.]+% //g') )
+          numb_commits=$(git rev-list --count origin/master..$LATEST_COMMIT)
+          IFS=$'\n' dir_list=( $(git --no-pager diff --dirstat=files,0 origin/master~${numb_commits} | sed -E 's/^[ 0-9.]+% //g') )
+          major_python_ver=$(echo ${CURR_PYTHON_VER} | cut -d '.' -f 1 )
+          minor_python_ver=$(echo ${CURR_PYTHON_VER} | cut -d '.' -f 2 )
           
           for curr_dir in "${dir_list[@]}"
           do
             files_in_dir=$(find ${curr_dir} -maxdepth 1 -name "tox.ini" | wc -l)
             if [ ${files_in_dir} -ge 1 ]; then
-              cd $GITHUB_WORKSPACE/${curr_dir}
-              tox
+              cd $GITHUB_WORKSPACE/${curr_dir} 
+              tox -e "py${major_python_ver}${minor_python_ver}"
             fi
           done
