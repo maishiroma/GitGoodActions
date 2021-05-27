@@ -5,7 +5,7 @@ name: AWS Lambda Unit Tests
 
 on:
   pull_request: # Runs this when new changes are added to the awslamda directory in a PR
-    paths: 'awslambda/**'
+    paths: 'python/**'
     branches:
       - master
 
