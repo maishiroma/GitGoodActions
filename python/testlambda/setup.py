@@ -45,4 +45,3 @@ setup(
     scripts=['src/test.py'],
     entry_points={'console_scripts': ['test = test:main']},
 )
-
