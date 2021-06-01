@@ -12,10 +12,6 @@ on:
 jobs:
   pythontests:
     runs-on: ubuntu-latest
-    strategy: # Lists the number of python versions to use for tests
-      matrix:
-        python-version: [3.7, 3.8]
-
     steps:
       - name: Checkout PR
         uses: actions/checkout@v2
@@ -23,30 +19,96 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Fetch master branch
         run: git fetch origin master
-      - name: Install Python v${{ matrix.python-version }}
+      - name: Install Python 3.7
         uses: actions/setup-python@v2
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: 3.7
+      - name: Install Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
       - name: Install unit testing pre-reqs
         run: |
           python -m pip install --upgrade pip
           pip install tox
-      - name: Perform unit testing
+      - name: Obtain list of valid lambda dirs
+        id: dirlist
         env:
           LATEST_COMMIT: ${{ github.event.pull_request.head.sha }}
-          CURR_PYTHON_VER: ${{ matrix.python-version }}
         run: |
           cd $GITHUB_WORKSPACE
           numb_commits=$(git rev-list --count origin/master..$LATEST_COMMIT)
           IFS=$'\n' dir_list=( $(git --no-pager diff --dirstat=files,0 origin/master~${numb_commits} | sed -E 's/^[ 0-9.]+% //g') )
-          major_python_ver=$(echo ${CURR_PYTHON_VER} | cut -d '.' -f 1 )
-          minor_python_ver=$(echo ${CURR_PYTHON_VER} | cut -d '.' -f 2 )
           
+          lambda_dirs=""
           for curr_dir in "${dir_list[@]}"
           do
             files_in_dir=$(find ${curr_dir} -maxdepth 1 -name "tox.ini" 2>/dev/null | wc -l)
             if [ ${files_in_dir} -ge 1 ]; then
-              cd $GITHUB_WORKSPACE/${curr_dir} 
-              tox -e "py${major_python_ver}${minor_python_ver}"
+              lambda_dirs="$GITHUB_WORKSPACE/${curr_dir} ${lambda_dirs}"
             fi
           done
+          echo "::set-output name=lambdadirs::${lambda_dirs}"
+      - name: Perform Python 3.7 unit testing
+        id: py37
+        env:
+          CURR_PYTHON_VER: py37
+          DIR_LIST: ${{ steps.dirlist.outputs.lambdadirs }}
+        run: |
+          IFS=$' ' dir_list=( $(echo ${DIR_LIST}) )
+          
+          errored_lambdas=""
+          for curr_dir in "${dir_list[@]}"
+          do
+            cd ${curr_dir}
+            tox -e "${CURR_PYTHON_VER}" | tee output.txt || true
+            cat output.txt | grep -q InvocationError
+            if [ $? -eq 0 ]; then
+              errored_lambdas="${errored_lambdas} $(basename $GITHUB_WORKSPACE/${curr_dir})"
+            fi
+          done
+          echo "::set-output name=erroredlambdas::${errored_lambdas}"
+        continue-on-error: true
+      - name: Perform Python 3.8 unit testing
+        id: py38
+        env:
+          CURR_PYTHON_VER: py38
+          DIR_LIST: ${{ steps.dirlist.outputs.lambdadirs }}
+          FAILED_LAMBDA_LIST: ${{ steps.py37.outputs.erroredlambdas }}
+        run: |
+          IFS=$' ' dir_list=( $(echo ${DIR_LIST}) )
+          
+          errored_lambdas=""
+          for curr_dir in "${dir_list[@]}"
+          do
+            cd ${curr_dir}
+            tox -e "${CURR_PYTHON_VER}" | tee output.txt || true
+            cat output.txt | grep -q InvocationError
+            if [ $? -eq 0 ]; then
+              errored_lambdas="${errored_lambdas} $(basename $GITHUB_WORKSPACE/${curr_dir})"
+            fi
+          done
+          echo "::set-output name=erroredlambdas::${errored_lambdas}"
+        continue-on-error: true
+      - name: Verify test results
+        env:
+          DIR_LIST: ${{ steps.dirlist.outputs.lambdadirs }}
+          FAILED_LAMBDA_LIST: ${{ steps.py38.outputs.erroredlambdas }}
+        run: |
+          IFS=$' ' dir_list=( $(echo ${DIR_LIST}) )
+          
+          has_failed=""
+          for curr_dir in "${dir_list[@]}"
+          do
+            lambda_name=$(basename $GITHUB_WORKSPACE/${curr_dir})
+            if [ $(echo ${FAILED_LAMBDA_LIST} | grep -o ${lambda_name} | wc -l) -ge 2 ]; then
+              echo "::error ::Lambda function, ${lambda_name}, failed in multiple test environments!"
+              has_failed="true"
+            fi
+          done
+
+          if [ "${has_failed}" == "true" ]; then
+            exit 1
+          else
+            echo "All tests ran sucessfully!"
+          fi
