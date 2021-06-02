@@ -61,9 +61,8 @@ jobs:
           for curr_dir in "${dir_list[@]}"
           do
             cd ${curr_dir}
-            tox -e "${CURR_PYTHON_VER}" | tee output.txt || true
-            cat output.txt | grep -q InvocationError
-            if [ $? -eq 0 ]; then
+            tox -e "${CURR_PYTHON_VER}" | tee output.txt || true && echo
+            if [ $(cat output.txt | grep -o InvocationError | wc -l) -gt 0 ]; then
               errored_lambdas="${errored_lambdas} $(basename $GITHUB_WORKSPACE/${curr_dir})"
             fi
           done
@@ -82,13 +81,12 @@ jobs:
           for curr_dir in "${dir_list[@]}"
           do
             cd ${curr_dir}
-            tox -e "${CURR_PYTHON_VER}" | tee output.txt || true
-            cat output.txt | grep -q InvocationError
-            if [ $? -eq 0 ]; then
+            tox -e "${CURR_PYTHON_VER}" | tee output.txt || true && echo
+            if [ $(cat output.txt | grep -o InvocationError | wc -l) -gt 0 ]; then
               errored_lambdas="${errored_lambdas} $(basename $GITHUB_WORKSPACE/${curr_dir})"
             fi
           done
-          echo "::set-output name=erroredlambdas::${errored_lambdas}"
+          echo "::set-output name=erroredlambdas::${errored_lambdas} ${FAILED_LAMBDA_LIST}"
         continue-on-error: true
       - name: Verify test results
         env:
