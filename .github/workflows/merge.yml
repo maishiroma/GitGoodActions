@@ -11,16 +11,61 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v2
       with:
-        ref: ${{ env.BRANCH }}
-        fetch-depth: '0'  # Need this since by default, the checkout does not pull in any other branches
+        ref: ${{ github.event.pull_request.head.sha }} # Makes sure we get the latest commit from the PR
+    - name: Fetch master
+      run: git fetch origin master
     - name: Perform Check
+      env:
+        LATEST_COMMIT: ${{ github.event.pull_request.head.sha }}
       run: |
-        check_for_merge_commits=$(git log origin/master..origin/$GITHUB_HEAD_REF --merges | cat)
-        echo $GITHUB_HEAD_REF
-        echo $check_for_merge_commits
+        check_for_merge_commits=$(git --no-pager log origin/master..${LATEST_COMMIT} --merges)
 
         if [ -n "$check_for_merge_commits" ]; then
           echo "::error ::A git merge was performed on this branch, please use git rebase instead."
           echo "::error ::For more information, refer to the repo's root README.md."
           exit 1
         fi
+    - name: Check for Binaries In Repository
+      run: |
+        IFS=$'\n' repo_file_list=( $(find $GITHUB_WORKSPACE -type f -not -path "$GITHUB_WORKSPACE/.git/*") )
+        accepted_mime_prefixes=( "text" "inode" )
+        acceptable_ext=( "json" )
+        
+        unneeded_file_paths=""
+        for curr_file in "${repo_file_list[@]}"
+        do
+          mime_type_prefix=$(file --mime-type ${curr_file} | cut -d ' ' -f 2 | cut -d '/' -f 1)
+          found="false"
+          
+          for curr_mime_prefix in "${accepted_mime_prefixes[@]}"
+          do
+            if [ "${mime_type_prefix}" == "${curr_mime_prefix}" ]; then
+              found="true"
+              break
+            fi
+          done
+
+          if [ ${found} != "true" ]; then
+            file_ext=$(basename ${curr_file} | cut -d '.' -f 2)
+            for curr_ext in "${acceptable_ext[@]}"
+            do
+              if [ "${file_ext}" == "${curr_ext}" ]; then
+                found="true"
+                break
+              fi
+            done
+
+            if [ "${found}" != "true" ]; then
+              unneeded_file_paths="${curr_file} ${unneeded_file_paths}"
+            fi
+          fi
+        done
+
+        if [ "${unneeded_file_paths}" != "" ]; then
+          echo "::error ::The following unnecessary file(s) are present in the repository, please remove them. For help, refer to docs/standard-development-workflow.md"
+          echo "::error ::${unneeded_file_paths}"
+          exit 1
+        else
+          echo "No binary files found!"
+        fi
+      continue-on-error: false
