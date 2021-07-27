@@ -4,11 +4,10 @@ on:
     branches:
       - 'RC/[0-9]+.[0-9]+'  # Only run on RC/X.Y branches
     tags:
-      - '[0-9]+.[0-9]+.[0.9]+' # Only run on tags, X.Y.Z
+      - '[0-9]+.[0-9]+.[0-9]+' # Only run on tags, X.Y.Z
 env:
   TF_GLOBAL_ROOT: env/dev/global
   TF_VERSION: '0.12.20'
-  TF_IMG_SHA: '53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee'
 
 jobs:
   pre_req_gather:
@@ -23,54 +22,51 @@ jobs:
         env:
           REF: ${{ github.ref }}
         run: |
-          clean_ref=$($REF | cut -d '/' -f 3)
+          clean_ref=$(echo $REF | cut -d '/' -f 3-)
           echo "::set-output name=cleanref::$clean_ref"
   
   tst_release_planner:
     name: Terraform Plan Tst Release
-    if: contains(github.ref, 'heads') == 'true' # Check to make sure that the pushed up ref is a branch
-    needs: pre_req_gathers
+    if: ${{ contains(github.ref, 'heads') == true }} # Check to make sure that the pushed up ref is a branch
+    needs: pre_req_gather
     runs-on: ubuntu-latest
     container:
-      image: hashicorp/terraform@sha256:${{ env.TF_IMG_SHA }}
+      image: hashicorp/terraform@sha256:53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee
 
     steps:
       - name: Checkout RC Branch
         uses: actions/checkout@v2
         with:
-          ref: ${{ needs.pre_req_gathers.outputs.cleanref }}
-      - name: Install Python 3.8
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.8
+          ref: ${{ needs.pre_req_gather.outputs.cleanref }}
       - name: Perform Terraform Plan
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
           terraform init -no-color
-          terraform plan -no-color -out terraform.tfplan 
+          terraform plan -no-color -out terraform.tfplan
+      - name: Tar Repository for Artifact Upload
+        run: cd $GITHUB_WORKSPACE && tar -cvf repository.tar .
       - name: Save Plan Artifact
         uses: actions/upload-artifact@v2
         with:
           name: tst_plans_artifact
-          path: $GITHUB_WORKSPACE
+          path: ${{ github.workspace }}/repository.tar
+          retention-days: 1
       
   tst_release_applier:
     name: Terraform Apply Tst Release
-    needs: [tst_release_planner, pre_req_gathers]
+    needs: [tst_release_planner, pre_req_gather]
     environment: tf_tst   # Will allow for a user to manually approve the job to continue
     runs-on: ubuntu-latest
     container:
-      image: hashicorp/terraform@sha256:${{ env.TF_IMG_SHA }}
+      image: hashicorp/terraform@sha256:53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee
     steps:
-      - name: Install Python 3.8
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.8
       - name: Download Tst Artifact
         uses: actions/download-artifact@v2
         with:
           name: tst_plans_artifact
-          path: $GITHUB_WORKSPACE
+          path: ${{ github.workspace }}
+      - name: Extract Artifact to directory
+        run: tar -xvf $GITHUB_WORKSPACE/repository.tar
       - name: Perform Terraform Apply
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
@@ -78,50 +74,47 @@ jobs:
 
   prd_release_planner:
     name: Terraform Plan Prd Release
-    needs: pre_req_gathers
-    if: contains(github.ref, 'tags') == 'true' # Checks to make sure that the pushed up ref is a tag
+    needs: pre_req_gather
+    if: ${{ contains(github.ref, 'tags') == true }} # Checks to make sure that the pushed up ref is a tag
     runs-on: ubuntu-latest
     container:
-      image: hashicorp/terraform@sha256:${{ env.TF_IMG_SHA }}
+      image: hashicorp/terraform@sha256:53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee
 
     steps:
       - name: Checkout RC Branch
         uses: actions/checkout@v2
         with:
-          ref: ${{ needs.pre_req_gathers.outputs.cleanref }}
-      - name: Install Python 3.8
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.8
+          ref: ${{ needs.pre_req_gather.outputs.cleanref }}
       - name: Perform Terraform Plan
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
           terraform init -no-color
           terraform plan -no-color -out terraform.tfplan 
+      - name: Tar Repository for Artifact Upload
+        run: cd $GITHUB_WORKSPACE && tar -cvf repository.tar .
       - name: Save Plan Artifact
         uses: actions/upload-artifact@v2
         with:
           name: prd_plans_artifact
-          path: $GITHUB_WORKSPACE
+          path: ${{ github.workspace }}/repository.tar
+          retention-days: 1
 
   prd_release_applier:
     name: Terraform Apply Prd Release
-    needs: [prd_release_planner, pre_req_gathers]
+    needs: [prd_release_planner, pre_req_gather]
     environment: tf_prd # Will allow for a user to manually approve the job to continue
     runs-on: ubuntu-latest
     container:
-      image: hashicorp/terraform@sha256:${{ env.TF_IMG_SHA }}
+      image: hashicorp/terraform@sha256:53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee
 
     steps:
-      - name: Install Python 3.8
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.8
       - name: Download Prd Artifact
         uses: actions/download-artifact@v2
         with:
           name: prd_plans_artifact
-          path: $GITHUB_WORKSPACE
+          path: ${{ github.workspace }}
+      - name: Extract Artifact to directory
+        run: tar -xvf $GITHUB_WORKSPACE/repository.tar
       - name: Perform Terraform Apply
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
