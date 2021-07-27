@@ -1,0 +1,128 @@
+name: Multi TF Invoker
+on:
+  push: 
+    branches:
+      - 'RC/[0-9]+.[0-9]+'  # Only run on RC/X.Y branches
+    tags:
+      - '[0-9]+.[0-9]+.[0.9]+' # Only run on tags, X.Y.Z
+env:
+  TF_GLOBAL_ROOT: env/dev/global
+  TF_VERSION: '0.12.20'
+  TF_IMG_SHA: '53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee'
+
+jobs:
+  pre_req_gather:
+    name: Gather pre-requirements
+    runs-on: ubuntu-latest
+    outputs:
+      cleanref: ${{ steps.workflow_ref.outputs.cleanref }}
+
+    steps:
+      - name: Get branch/tag ref
+        id: workflow_ref
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          clean_ref=$($REF | cut -d '/' -f 3)
+          echo "::set-output name=cleanref::$clean_ref"
+  
+  tst_release_planner:
+    name: Terraform Plan Tst Release
+    if: contains(github.ref, 'heads') == 'true' # Check to make sure that the pushed up ref is a branch
+    needs: pre_req_gathers
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform@sha256:${{ env.TF_IMG_SHA }}
+
+    steps:
+      - name: Checkout RC Branch
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ needs.pre_req_gathers.outputs.cleanref }}
+      - name: Install Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Perform Terraform Plan
+        run: |
+          cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
+          terraform init -no-color
+          terraform plan -no-color -out terraform.tfplan 
+      - name: Save Plan Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: tst_plans_artifact
+          path: $GITHUB_WORKSPACE
+      
+  tst_release_applier:
+    name: Terraform Apply Tst Release
+    needs: [tst_release_planner, pre_req_gathers]
+    environment: tf_tst   # Will allow for a user to manually approve the job to continue
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform@sha256:${{ env.TF_IMG_SHA }}
+    steps:
+      - name: Install Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Download Tst Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: tst_plans_artifact
+          path: $GITHUB_WORKSPACE
+      - name: Perform Terraform Apply
+        run: |
+          cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
+          terraform apply -auto-approve -no-color terraform.tfplan
+
+  prd_release_planner:
+    name: Terraform Plan Prd Release
+    needs: pre_req_gathers
+    if: contains(github.ref, 'tags') == 'true' # Checks to make sure that the pushed up ref is a tag
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform@sha256:${{ env.TF_IMG_SHA }}
+
+    steps:
+      - name: Checkout RC Branch
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ needs.pre_req_gathers.outputs.cleanref }}
+      - name: Install Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Perform Terraform Plan
+        run: |
+          cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
+          terraform init -no-color
+          terraform plan -no-color -out terraform.tfplan 
+      - name: Save Plan Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: prd_plans_artifact
+          path: $GITHUB_WORKSPACE
+
+  prd_release_applier:
+    name: Terraform Apply Prd Release
+    needs: [prd_release_planner, pre_req_gathers]
+    environment: tf_prd # Will allow for a user to manually approve the job to continue
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform@sha256:${{ env.TF_IMG_SHA }}
+
+    steps:
+      - name: Install Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Download Prd Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: prd_plans_artifact
+          path: $GITHUB_WORKSPACE
+      - name: Perform Terraform Apply
+        run: |
+          cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
+          terraform apply -auto-approve -no-color terraform.tfplan
