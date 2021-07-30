@@ -30,8 +30,6 @@ jobs:
     if: ${{ contains(github.ref, 'heads') == true }} # Check to make sure that the pushed up ref is a branch
     needs: pre_req_gather
     runs-on: ubuntu-latest
-    container:
-      image: hashicorp/terraform@sha256:53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee
 
     steps:
       - name: Checkout RC Branch
@@ -42,6 +40,9 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
+      - name: Install Terraform 0.12.20
+        run: |
+          $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/0.12.20/terraform_0.12.20_linux_amd64.zip https://releases.hashicorp.com/terraform/0.12.20/terraform_0.12.20_SHA256SUMS terraform
       - name: Perform Terraform Plan
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
