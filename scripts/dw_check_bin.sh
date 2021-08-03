@@ -1,4 +1,7 @@
 #!/bin/bash
+set -x
+set -e
+
 # Bash helper script to download and verify external binaries to GitHub Action Runner
 # Args:
 # 1. URL of bin download
@@ -30,23 +33,25 @@ wget -q -O ${shasum_dw_loc} ${sha256_url}
 
 # Shasum checker
 cd /tmp/
-check=$(shasum -c --ignore-missing ${shasum_dw_loc} | grep -c "FAILED")
-if [ ${check} -eq 1 ]; then
-    echo "::error ::sha256 of ${bin_actual_name} does not match with official download, please try again."
-    exit 1
-fi
+shasum -c --ignore-missing ${shasum_dw_loc} || (echo "::error ::sha256 of ${bin_actual_name} does not match with official download, please try again." && exit 1)
 cd -
 
 if [[ "${bin_dw_name##*.}" == "zip" ]]; then
-    # If the file is a zip, we extract it and presume that the contents contains
-    # the bin with the same name as the tool itself
-    unzip -q ${bin_dw_loc} -d /tmp/ && rm ${bin_dw_loc}
-    mv -f /tmp/${bin_actual_name} /usr/local/bin/${bin_actual_name}
+    # If the file is a zip, we extract it and move it to the proper location
+    zip_contents=( $(unzip -Z -1 ${bin_dw_loc}) )
+    for curr_file in "${zip_contents[@]}"; do
+        filename=$(basename ${curr_file})
+        if [ $(echo ${bin_actual_name} | grep -c ${filename}) -eq 1 ]; then
+            unzip -q ${bin_dw_loc} -d /tmp/ && rm ${bin_dw_loc}
+            mv -f /tmp/${filename} /usr/local/bin/${bin_actual_name}
+            break
+        fi
+    done
 else
     # If the bin is just a bin on download, we just move it to the proper location
     mv -f ${bin_dw_loc} /usr/local/bin/${bin_actual_name}
 fi
 
 # Confirm bin works
-chmod +x /usr/local/bin/${bin_actual_name}
+chmod +x /usr/local/bin/${bin_actual_name} || (echo "Unable to find ${bin_actual_name}, please check if the provided download link contains said file." && exit 1)
 ${bin_actual_name} --version

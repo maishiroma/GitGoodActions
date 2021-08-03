@@ -7,7 +7,6 @@ on:
       - '[0-9]+.[0-9]+.[0-9]+' # Only run on tags, X.Y.Z
 env:
   TF_GLOBAL_ROOT: env/dev/global
-  TF_VERSION: '0.12.20'
 
 jobs:
   pre_req_gather:
@@ -42,13 +41,12 @@ jobs:
           python-version: 3.8
       - name: Install Terraform 0.12.20
         run: |
-          $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/0.12.20/terraform_0.12.20_linux_amd64.zip https://releases.hashicorp.com/terraform/0.12.20/terraform_0.12.20_SHA256SUMS terraform
+          $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/0.12.20/terraform_0.12.20_linux_amd64.zip https://releases.hashicorp.com/terraform/0.12.20/terraform_0.12.20_SHA256SUMS terraform0.12.20
       - name: Perform Terraform Plan
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
-          terraform init -no-color
-          terraform plan -no-color -out terraform.tfplan
-          python --version
+          terraform0.12.20 init -no-color
+          terraform0.12.20 plan -no-color -out terraform.tfplan
       - name: Tar Repository for Artifact Upload
         run: cd $GITHUB_WORKSPACE && tar -cvf repository.tar .
       - name: Save Plan Artifact
