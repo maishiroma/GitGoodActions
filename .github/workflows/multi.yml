@@ -7,10 +7,11 @@ on:
       - '[0-9]+.[0-9]+.[0-9]+' # Only run on tags, X.Y.Z
 env:
   TF_GLOBAL_ROOT: env/dev/global
+  TF_VERSION: "0.12.24"
 
 jobs:
   pre_req_gather:
-    name: Gather pre-requirements
+    name: Gather Pre-Requirements
     runs-on: ubuntu-latest
     outputs:
       cleanref: ${{ steps.workflow_ref.outputs.cleanref }}
@@ -39,14 +40,14 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
-      - name: Install Terraform 0.12.20
+      - name: Install Terraform 0.12.24
         run: |
-          $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/0.12.20/terraform_0.12.20_linux_amd64.zip https://releases.hashicorp.com/terraform/0.12.20/terraform_0.12.20_SHA256SUMS terraform0.12.20
+         $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_SHA256SUMS terraform${{ env.TF_VERSION }}
       - name: Perform Terraform Plan
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
-          terraform0.12.20 init -no-color
-          terraform0.12.20 plan -no-color -out terraform.tfplan
+          terraform${{ env.TF_VERSION }} init -no-color
+          terraform${{ env.TF_VERSION }} plan -no-color -out terraform.tfplan
       - name: Tar Repository for Artifact Upload
         run: cd $GITHUB_WORKSPACE && tar -cvf repository.tar .
       - name: Save Plan Artifact
@@ -61,9 +62,15 @@ jobs:
     needs: [tst_release_planner, pre_req_gather]
     environment: tf_tst   # Will allow for a user to manually approve the job to continue
     runs-on: ubuntu-latest
-    container:
-      image: hashicorp/terraform@sha256:53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee
+    
     steps:
+      - name: Install Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Install Terraform 0.12.24
+        run: |
+         $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_SHA256SUMS terraform${{ env.TF_VERSION }}
       - name: Download Tst Artifact
         uses: actions/download-artifact@v2
         with:
@@ -74,15 +81,13 @@ jobs:
       - name: Perform Terraform Apply
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
-          terraform apply -auto-approve -no-color terraform.tfplan
+          terraform${{ env.TF_VERSION }} plan -no-color -out terraform.tfplan
 
   prd_release_planner:
     name: Terraform Plan Prd Release
     needs: pre_req_gather
     if: ${{ contains(github.ref, 'tags') == true }} # Checks to make sure that the pushed up ref is a tag
     runs-on: ubuntu-latest
-    container:
-      image: hashicorp/terraform@sha256:53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee
 
     steps:
       - name: Checkout Tag Reference
@@ -93,11 +98,14 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
+      - name: Install Terraform 0.12.24
+        run: |
+         $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_SHA256SUMS terraform${{ env.TF_VERSION }}
       - name: Perform Terraform Plan
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
-          terraform init -no-color
-          terraform plan -no-color -out terraform.tfplan 
+          terraform${{ env.TF_VERSION }} init -no-color
+          terraform${{ env.TF_VERSION }} plan -no-color -out terraform.tfplan
       - name: Tar Repository for Artifact Upload
         run: cd $GITHUB_WORKSPACE && tar -cvf repository.tar .
       - name: Save Plan Artifact
@@ -112,10 +120,15 @@ jobs:
     needs: [prd_release_planner, pre_req_gather]
     environment: tf_prd # Will allow for a user to manually approve the job to continue
     runs-on: ubuntu-latest
-    container:
-      image: hashicorp/terraform@sha256:53fb1c0a78c8bb91c4a855c1b352ea7928f6fa65f8080dc7a845e240dd2a9bee
 
     steps:
+      - name: Install Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Install Terraform 0.12.24
+        run: |
+         $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_SHA256SUMS terraform${{ env.TF_VERSION }}
       - name: Download Prd Artifact
         uses: actions/download-artifact@v2
         with:
@@ -126,4 +139,4 @@ jobs:
       - name: Perform Terraform Apply
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
-          terraform apply -auto-approve -no-color terraform.tfplan
+          terraform${{ env.TF_VERSION }} apply -no-color -out terraform.tfplan
