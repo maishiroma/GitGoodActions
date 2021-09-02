@@ -78,12 +78,10 @@ jobs:
       - name: Install Terraform 0.12.24
         run: |
          $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_SHA256SUMS terraform${{ env.TF_VERSION }}
-      - name: Extract Artifact to Directory
-        run: tar -xvf $GITHUB_WORKSPACE/repository.tar
       - name: Perform Terraform Apply
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
-          terraform${{ env.TF_VERSION }} plan -no-color -out terraform.tfplan
+          terraform${{ env.TF_VERSION }} apply -auto-approve -input=false -no-color terraform.tfplan
 
   prd_release_planner:
     name: Terraform Plan Prd Release
@@ -141,4 +139,4 @@ jobs:
       - name: Perform Terraform Apply
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
-          terraform${{ env.TF_VERSION }} apply -no-color -out terraform.tfplan
+          terraform${{ env.TF_VERSION }} apply -auto-approve -input=false -no-color terraform.tfplan
