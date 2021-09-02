@@ -64,6 +64,13 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+     - name: Download Tst Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: tst_plans_artifact
+          path: ${{ github.workspace }}
+      - name: Extract Artifact to Directory
+        run: tar -xvf $GITHUB_WORKSPACE/repository.tar
       - name: Install Python 3.8
         uses: actions/setup-python@v2
         with:
@@ -71,11 +78,6 @@ jobs:
       - name: Install Terraform 0.12.24
         run: |
          $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_SHA256SUMS terraform${{ env.TF_VERSION }}
-      - name: Download Tst Artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: tst_plans_artifact
-          path: ${{ github.workspace }}
       - name: Extract Artifact to Directory
         run: tar -xvf $GITHUB_WORKSPACE/repository.tar
       - name: Perform Terraform Apply
@@ -122,13 +124,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install Python 3.8
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.8
-      - name: Install Terraform 0.12.24
-        run: |
-         $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_SHA256SUMS terraform${{ env.TF_VERSION }}
       - name: Download Prd Artifact
         uses: actions/download-artifact@v2
         with:
@@ -136,6 +131,13 @@ jobs:
           path: ${{ github.workspace }}
       - name: Extract Artifact to Directory
         run: tar -xvf $GITHUB_WORKSPACE/repository.tar
+      - name: Install Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Install Terraform 0.12.24
+        run: |
+         $GITHUB_WORKSPACE/scripts/dw_check_bin.sh https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_linux_amd64.zip https://releases.hashicorp.com/terraform/${{ env.TF_VERSION }}/terraform_${{ env.TF_VERSION }}_SHA256SUMS terraform${{ env.TF_VERSION }}
       - name: Perform Terraform Apply
         run: |
           cd $GITHUB_WORKSPACE/${{ env.TF_GLOBAL_ROOT }}
