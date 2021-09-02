@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-     - name: Download Tst Artifact
+      - name: Download Tst Artifact
         uses: actions/download-artifact@v2
         with:
           name: tst_plans_artifact
