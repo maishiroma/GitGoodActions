@@ -1,0 +1,26 @@
+name: Test Push
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      something:
+        description: "Test me!"
+
+jobs:
+  push:
+    if: ${{ github.event_name == "push" }}
+    name: Hello World
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        runs: |
+          echo "hello world"
+  
+  manual:
+    if: ${{ github.event_name == "workflow_dispatch" }}
+    name: Hello World
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        runs: |
+          echo "hello world"
