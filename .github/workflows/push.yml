@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Test
-        runs: |
+        run: |
           echo "hello world"
   
   manual:
@@ -22,5 +22,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Test
-        runs: |
+        run: |
           echo "hello world"
