@@ -1,13 +1,6 @@
 name: PR Inputs
 on:
-  pull_request: # PR pushes or when a PR merges
-    types:
-      - synchronize
-      - opened
-      - reopened
-      - closed
-    branches:
-      - master
+  pull_request:
     paths:
       -'scripts/**'
 
