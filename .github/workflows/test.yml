@@ -2,7 +2,7 @@ name: PR Inputs
 on:
   pull_request:
     paths:
-      -'scripts/**'
+      - 'scripts/**'
 
 jobs:
 
