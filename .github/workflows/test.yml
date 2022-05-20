@@ -1,6 +1,13 @@
 name: PR Inputs
 on:
   pull_request:
+    types:
+      - synchronize
+      - opened
+      - reopened
+      - closed
+    branches:
+      - master
     paths:
       - 'scripts/**'
 
